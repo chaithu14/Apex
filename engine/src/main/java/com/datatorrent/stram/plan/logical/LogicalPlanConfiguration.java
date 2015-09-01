@@ -100,7 +100,7 @@ public class LogicalPlanConfiguration {
 
   private enum StramElement {
     APPLICATION("application"), GATEWAY("gateway"), TEMPLATE("template"), OPERATOR("operator"),STREAM("stream"), PORT("port"), INPUT_PORT("inputport"),OUTPUT_PORT("outputport"),
-    ATTR("attr"), PROP("prop"),CLASS("class"),PATH("path");
+    ATTR("attr"), PROP("prop"),CLASS("class"),PATH("path"),UNIFIER("unifier");
     private final String value;
 
     StramElement(String value) {
@@ -674,7 +674,7 @@ public class LogicalPlanConfiguration {
    */
   private static class PortConf extends Conf {
 
-    private static final StramElement[] CHILD_ELEMENTS = new StramElement[] {StramElement.ATTR};
+    private static final StramElement[] CHILD_ELEMENTS = new StramElement[] {StramElement.ATTR, StramElement.UNIFIER};
 
     @SuppressWarnings("unused")
     PortConf() {
@@ -712,6 +712,7 @@ public class LogicalPlanConfiguration {
     elementMaps.put(StramElement.PORT, PortConf.class);
     elementMaps.put(StramElement.INPUT_PORT, PortConf.class);
     elementMaps.put(StramElement.OUTPUT_PORT, PortConf.class);
+    elementMaps.put(StramElement.UNIFIER, OperatorConf.class);
   }
 
   private Conf getConf(StramElement element, Conf ancestorConf) {
@@ -746,6 +747,8 @@ public class LogicalPlanConfiguration {
       parentElement = StramElement.APPLICATION;
     } else if ((element == StramElement.PORT) || (element == StramElement.INPUT_PORT) || (element == StramElement.OUTPUT_PORT)) {
       parentElement = StramElement.OPERATOR;
+    } else if(element == StramElement.UNIFIER) {
+      parentElement = StramElement.PORT;
     } else if (element == StramElement.TEMPLATE) {
       parentElement = null;
     }
@@ -959,7 +962,7 @@ public class LogicalPlanConfiguration {
         } else {
           LOG.warn("Invalid configuration key: {}", propertyName);
         }
-      } else if ((element == StramElement.GATEWAY)) {
+      } else if ((element == StramElement.GATEWAY) || (element == StramElement.UNIFIER)) {
         Conf elConf = addConf(element, null, conf);
         if (elConf != null) {
           parseStramPropertyTokens(keys, index+1, propertyName, propertyValue, elConf);
@@ -1398,13 +1401,11 @@ public class LogicalPlanConfiguration {
   private void setOperatorConfiguration(final LogicalPlan dag, List<AppConf> appConfs, String appName) {
     for (final OperatorMeta ow : dag.getAllOperators()) {
       List<OperatorConf> opConfs = getMatchingChildConf(appConfs, ow.getName(), StramElement.OPERATOR);
-
       // Set the operator attributes
       setAttributes(OperatorContext.class, opConfs, ow.getAttributes());
       // Set the operator opProps
       Map<String, String> opProps = getProperties(ow, opConfs, appName);
       setOperatorProperties(ow.getOperator(), opProps);
-
       // Set the port attributes
       for (Entry<LogicalPlan.InputPortMeta, LogicalPlan.StreamMeta> entry : ow.getInputStreams().entrySet()) {
         final InputPortMeta im = entry.getKey();
@@ -1421,6 +1422,10 @@ public class LogicalPlanConfiguration {
         // Add the generic port attributes as well
         List<PortConf> portConfs = getMatchingChildConf(opConfs, om.getPortName(), StramElement.PORT);
         outPortConfs.addAll(portConfs);
+        List<OperatorConf> unifConfs = getMatchingChildConf(outPortConfs, null, StramElement.UNIFIER);
+        if(unifConfs.size() != 0) {
+          setAttributes(OperatorContext.class, unifConfs, om.getUnifierMeta().getAttributes());
+        }
         setAttributes(PortContext.class, outPortConfs, om.getAttributes());
       }
       ow.populateAggregatorMeta();
